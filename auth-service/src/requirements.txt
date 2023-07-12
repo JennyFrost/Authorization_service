@@ -1,0 +1,13 @@
+redis==4.4.2
+fastapi==0.97.0
+orjson==3.9.1
+pydantic==1.9.0
+python-dotenv==1.0.0
+uvicorn==0.12.2
+gunicorn==20.1.0
+uvloop==0.17.0 ; sys_platform != "win32" and implementation_name == "cpython"
+alembic==1.11.1
+passlib==1.7.4
+SQLAlchemy==2.0.18
+typer==0.9.0
+psycopg2-binary==2.9.6
