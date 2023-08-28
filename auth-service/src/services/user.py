@@ -1,6 +1,5 @@
 from fastapi import Request
 
-
 from schemas.entity import UserCreate, UserLogin, UserProfil, ChangeProfil, ChangePassword, FieldFilter
 from models.entity import User, Role, EventEnum
 from services.repository import BaseRepository
@@ -8,9 +7,10 @@ from services.auth_jwt import BaseAuthJWT
 from services.history import BaseHistory
 from services.redis_cache import CacheRedis
 from services.role import BaseRole
-from core.config import app_settings, ErrorName
+from core.config import app_settings, Token, Name
 from time import time
 from werkzeug.security import generate_password_hash
+from core.exceptions import *
 
 
 class BaseAuth(BaseRepository, BaseAuthJWT, CacheRedis):
@@ -19,15 +19,14 @@ class BaseAuth(BaseRepository, BaseAuthJWT, CacheRedis):
         self.manager_history = manager_history
         super().__init__(*args, **kwargs)
 
-    async def sign_up(self, data: UserCreate) -> str | ErrorName:
+    async def sign_up(self, data: UserCreate) -> None:
         """
         Регистрирует нового пользователя.
 
         :param data: (UserCreate) Данные, необходимые для создания нового пользователя.
         :return:
-        Union[str, ErrorName]: Возвращает строку 'Success', если регистрация прошла успешно,
-                               либо объект класса ErrorName с ошибкой (например, если пользователь с таким
-                               логином или email уже существует).
+        None: Возвращает None, если регистрация прошла успешно.
+        В противном случае выбрасывается исключение.
         """
         data_filter = [
             {
@@ -41,9 +40,9 @@ class BaseAuth(BaseRepository, BaseAuthJWT, CacheRedis):
         users = await self.get_list_obj_by_list_attr_name_operator_or(data_filter)
         for user in users:
             if user.login == data.login:
-                return ErrorName.LoginAlreadyExists
+                raise AlreadyExistsException(name=Name.LOGIN)
             if user.email == data.email:
-                return ErrorName.EmailAlreadyExists
+                raise AlreadyExistsException(name=Name.EMAIL)
 
         role = await self.get_first_obj_order_by_attr_name(Role, 'lvl')
         if role is None:
@@ -58,112 +57,104 @@ class BaseAuth(BaseRepository, BaseAuthJWT, CacheRedis):
                 'password': data.password,
                 'last_name': data.last_name,
                 'first_name': data.first_name,
-                'role_id': role.id,
                 'email': data.email,
+                'role': role
             }
         )
 
-    async def log_in(self, data: UserLogin, user_agent: str) -> None | ErrorName:
+    async def log_in(self, data: UserLogin, user_agent: str) -> None:
         """
-         Аутентификация пользователя и создание токенов.
+         Авторизация и аутентификация пользователя и создание токенов.
 
         :param data: (UserLogin) Данные, необходимые для аутентификации пользователя (логин и пароль).
         :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
         :return:
-        Union[None, ErrorName]: Возвращает None, если аутентификация прошла успешно,
-                                или объект класса ErrorName с ошибкой (например, если пользователь не найден
-                                или неверный пароль).
+        None: Возвращает None, если аутентификация прошла успешно.
+        В противном случае выбрасывается исключение.
         """
         user = await self.get_obj_by_attr_name(User, 'login', data.login)
-        result = False
-        error = None
         if user is None:
-            return ErrorName.DoesNotExist
+            raise DoesNotExistException(name=Name.USER)
         elif not user.check_password(data.password):
-            error = ErrorName.InvalidPassword
-        if not error:
-            _, refresh_token = await self.create_tokens(sub=str(user.id), user_claims={
-                'user_agent': user_agent,
-                'is_admin': user.is_admin
-                })
-            await self._put_object_to_cache(obj=refresh_token, time_cache=app_settings.authjwt_time_refresh)
-            result = True
+            raise InvalidPasswordException()
+        _, refresh_token = await self.create_tokens(sub=str(user.id), user_claims={
+            'user_agent': user_agent,
+            'is_admin': user.is_admin
+            })
+        await self._put_object_to_cache(obj=refresh_token, time_cache=app_settings.authjwt_time_refresh)
+        result = True
         await self.manager_history.write_entry_history(
             user_id=user.id,
             user_agent=user_agent,
             event_type=EventEnum.login,
             result=result
         )
-        return error
 
-    async def get_info_from_access_token(self, user_agent: str) -> dict | ErrorName:
+
+    async def get_info_from_access_token(self, user_agent: str) -> dict:
         """
         Получает информацию из access token и проверяет его безопасность.
 
         :param user_agent: (str) Заголовок User-Agent, для сравнения с данными из access token.
         :return:
-        Union[dict, ErrorName]: Возвращает словарь с информацией из access token,
-                                или объект класса ErrorName с ошибкой (например, если access token недействителен
-                                или не безопасен).
+        dict: Возвращает словарь с информацией из access token.
+        В противном случае выбрасывается исключение.
         """
         user_data = await self.check_access_token()
         if await self._object_from_cache(obj=user_data.get('jti')):
-            return ErrorName.InvalidAccessToken
+            raise InvalidTokenException(token=Token.ACCESS)
         elif user_agent != user_data.get('user_agent'):
             time_cache = user_data.get('exp', int(time())) - int(time())
             await self._put_object_to_cache(obj=user_data.get('jti'), time_cache=time_cache)
-            return ErrorName.UnsafeEntry
+            raise UnsafeEntryException()
         else:
             return user_data
 
-    async def refresh_token(self, user_agent: str, request: Request) -> str | ErrorName:
+    async def refresh_token(self, user_agent: str, request: Request) -> None:
         """
             Обновляет access token и возвращает его.
 
         :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
         :param request: (Request) Объект запроса, содержащий cookies с refresh token и access token.
         :return:
-        Union[str, ErrorName]: Возвращает обновленный access token, если все проверки прошли успешно,
-                               или объект класса ErrorName с ошибкой (например, если refresh token недействителен,
-                               access token не соответствует refresh token или User-Agent не безопасен).
+        str: Возвращает обновленный access token, если все проверки прошли успешно.
+        В противном случае выбрасывается исключение.
         """
         refresh_token = request.cookies.get(app_settings.authjwt_refresh_cookie_key)
         if not await self._object_from_cache(obj=refresh_token):
-            return ErrorName.InvalidRefreshToken
+            raise InvalidTokenException(token=Token.REFRESH)
 
         await self._delete_object_from_cache(obj=refresh_token)
         uuid_access = request.cookies.get(app_settings.authjwt_access_cookie_key).split('.')[-1]
         data = await self.check_refresh_token()
-        result = False
-        error = None
         if data.get('user_agent', '') != user_agent:
-            error = ErrorName.UnsafeEntry
+            raise UnsafeEntryException()
         elif data.get('uuid_access', '') != uuid_access:
-            error = ErrorName.InvalidAccessRefreshTokens
-        if not error:
-            _, refresh_token = await self.create_tokens(
-                sub=data.get('sub'),
-                user_claims={
-                    'user_agent': user_agent,
-                    'is_admin': data.get('is_admin')
-                    })
-            await self._put_object_to_cache(refresh_token, app_settings.authjwt_time_refresh)
-            result = True
+            raise InvalidTokenException(token=Token.BOTH)
+        _, refresh_token = await self.create_tokens(
+            sub=data.get('sub'),
+            user_claims={
+                'user_agent': user_agent,
+                'is_admin': data.get('is_admin')
+                })
+        await self._put_object_to_cache(refresh_token, app_settings.authjwt_time_refresh)
+        result = True
         await self.manager_history.write_entry_history(
             user_id=data.get('sub'),
             user_agent=user_agent,
             event_type=EventEnum.refresh,
             result=result
         )
-        return error
+        return
 
     async def logout(self, request: Request, user_agent: str) -> None:
-        """string
+        """
         Осуществляет выход пользователя из системы (logout).
 
         :param request: (Request) Объект запроса, содержащий cookies с данными о пользователе.
         :return:
         None: Метод не возвращает значения, а просто выполняет процесс выхода пользователя из системы.
+        В противном случае выбрасывается исключение.
         """
         user_data = await self.check_access_token()
         time_cache = user_data.get('exp', int(time())) - int(time())
@@ -192,17 +183,17 @@ class UserManage:
         self.manager_role = manager_role
         self.manager_history = manager_history
 
-    async def get_history(self, user_agent: str):
+    async def get_history(self, user_agent: str, page_number, page_size):
         '''
         Метод для получения истории
 
         :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
         '''
 
-        user_obj: User | ErrorName = await self.get_user_obj(user_agent)
+        user_obj: User = await self.get_user_obj(user_agent)
         if not isinstance(user_obj, User):
             return user_obj
-        result = await self.manager_history.get_history(user_obj.id)
+        result = await self.manager_history.get_history(user_obj.id, page_number, page_size)
         return result
 
     async def change_level(self, user_agent: str, level_up=True):
@@ -212,21 +203,19 @@ class UserManage:
         :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
         :param level_up: (bool) Параметр для понижения уровня подписки при False или для повышения при True.
         '''
-        user_obj: User | ErrorName = await self.get_user_obj(user_agent)
+        user_obj: User = await self.get_user_obj(user_agent)
         if not isinstance(user_obj, User):
             return user_obj
-        role_id = user_obj.role_id
-        role_obj = await self.manager_role.get_role(role_id)
         if level_up:
-            role_lvl_higher = role_obj.lvl + 1
+            role_lvl_new = user_obj.role.lvl + 1
         else:
-            role_lvl_higher = role_obj.lvl - 1
-        role_obj_higher = await self.manager_auth.get_obj_by_attr_name(Role, 'lvl', role_lvl_higher)
+            role_lvl_new = user_obj.role.lvl - 1
+        role_obj_higher = await self.manager_auth.get_obj_by_attr_name(Role, 'lvl', role_lvl_new)
         if role_obj_higher:
-            user_obj.role_id = role_obj_higher.id
+            user_obj.role = role_obj_higher
             await self.manager_auth.session.commit()
         else:
-            return ErrorName.RoleDoesNotExist
+            raise DoesNotExistException(name=Name.ROLE)
 
     async def change_password(self, user_agent: str, new_data: ChangePassword):
         '''
@@ -234,11 +223,11 @@ class UserManage:
         :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
         '''
 
-        user_obj: User | ErrorName = await self.get_user_obj(user_agent)
+        user_obj: User = await self.get_user_obj(user_agent)
         if not isinstance(user_obj, User):
             return user_obj
         if not user_obj.check_password(new_data.old_password):
-            return ErrorName.InvalidPassword
+            raise InvalidPasswordException()
         user_obj.password = generate_password_hash(new_data.new_password)
         await self.manager_auth.session.commit()
 
@@ -248,7 +237,7 @@ class UserManage:
         :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
         '''
 
-        user_obj: User | ErrorName = await self.get_user_obj(user_agent)
+        user_obj: User = await self.get_user_obj(user_agent)
         if not isinstance(user_obj, User):
             return user_obj
         user_profil = await self.get_user_profil(user_obj)
@@ -260,7 +249,7 @@ class UserManage:
         :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
         '''
 
-        user_obj: User | ErrorName = await self.get_user_obj(user_agent)
+        user_obj: User = await self.get_user_obj(user_agent)
         if not isinstance(user_obj, User):
             return user_obj
         data_check = dict()
@@ -274,9 +263,7 @@ class UserManage:
         if new_data.login and new_data.email != user_obj.email:
             data_check["login"] = new_data.login
 
-        res_err = await self.search_for_duplicates(data_check)
-        if isinstance(res_err, ErrorName):
-            return res_err
+        await self.search_for_duplicates(data_check)
 
         if new_data.email:
             user_obj.email = new_data.email
@@ -289,12 +276,11 @@ class UserManage:
         return user_profil
 
     async def get_user_profil(self, user_obj: User) -> UserProfil:
-        role: Role = await self.manager_role.get_role(str(user_obj.role_id))
         profil = UserProfil(
             login=user_obj.login,
             first_name=user_obj.first_name,
             last_name=user_obj.last_name,
-            name_role=f"{role.lvl}:{role.name_role}",
+            name_role=f"{user_obj.role.lvl}:{user_obj.role.name_role}",
             email=user_obj.email
         )
         return profil
@@ -307,7 +293,7 @@ class UserManage:
         user_obj: User = await self.manager_auth.get_obj_by_pk(User, user_id)
         return user_obj
 
-    async def search_for_duplicates(self, data: dict) -> str | None:
+    async def search_for_duplicates(self, data: dict) -> None:
         fields = [FieldFilter(attr_name=key, attr_value=item) for key, item in data.items()]
         data_filter = [
             {
@@ -318,6 +304,6 @@ class UserManage:
         users = await self.manager_auth.get_list_obj_by_list_attr_name_operator_or(data_filter)
         for user in users:
             if user.login == data.get("login"):
-                return ErrorName.LoginAlreadyExists
+                raise AlreadyExistsException(name=Name.LOGIN)
             if user.email == data.get("email"):
-                return ErrorName.EmailAlreadyExists
+                raise AlreadyExistsException(name=Name.EMAIL)

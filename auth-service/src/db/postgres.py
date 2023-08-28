@@ -18,11 +18,6 @@ async def create_database() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def purge_database() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
-
 async def command_create_role(repository, model, data) -> None:
     async with async_session() as session:
         repository_obj = repository(session=session)
@@ -37,7 +32,7 @@ async def command_create_user(repository, model_user, model_role, data) -> str:
 
         role = await repository_obj.get_first_obj_order_by_attr_name(model_role, 'lvl')
         if role is None:
-            return 'Default role is not exists.\n try command -- python3 cli.py create_default_role'
+            return 'Default role does not exist.\nTry command -- python3 cli.py create_default_role'
 
         user = await repository_obj.get_obj_by_attr_name(model=model_user, attr_name='login', attr_value=data['login'])
         if user is None:

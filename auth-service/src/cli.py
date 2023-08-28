@@ -4,13 +4,14 @@ import asyncio
 from db.postgres import command_create_role, command_create_user
 from models.entity import Role, User
 from services.repository import BaseRepository
+from logger import logger
 
 app = typer.Typer()
 
 
 @app.command(name='create_default_role')
 def create_default_role(
-        name: str = "standart",
+        name: str = "standard",
         level: int = 0,
         max_year: int = 1980
 ):
@@ -21,7 +22,7 @@ def create_default_role(
         'max_year': max_year
     }
     asyncio.run(command_create_role(BaseRepository, Role, data))
-    print('Done!')
+    logger.info('Done!')
 
 
 @app.command(name='create_superuser')
@@ -41,7 +42,7 @@ def create_superuser(
         'email': email,
     }
     result = asyncio.run(command_create_user(BaseRepository, User, Role, data))
-    print(result)
+    logger.info(result)
 
 
 if __name__ == "__main__":

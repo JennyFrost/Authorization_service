@@ -74,6 +74,23 @@ class BaseRepository:
         query = select(model).filter(getattr(model, attr_name) == attr_value)
         return await self._get_obj(query)
 
+    async def get_list_obj_by_attr_name(self, model: Base, attr_name: str, attr_value: str | int,
+                                        page_number: int, page_size: int) -> Base | None:
+        """
+        Получает объект из базы данных, используя фильтр по имени атрибута и его значению.
+
+        :param model: (Base) Класс модели SQLAlchemy, из которого нужно получить объект.
+        :param attr_name: (str) Имя атрибута, по которому будет производиться фильтрация.
+        :param attr_value: (str | int) Значение атрибута, по которому будет производиться фильтрация.
+        :return:
+        Base | None: Возвращает список объектов из базы данных, соответствующий указанному фильтру,
+                    либо None, если объекты не были найдены.
+        """
+        start_number = (page_number - 1) * page_size
+        start_number = start_number if start_number > 0 else 0
+        query = select(model).where(getattr(model, attr_name) == attr_value).offset(start_number).limit(page_size)
+        return await self._get_list_obj(query)
+
     async def get_list_obj_by_list_attr_name_operator_or(self, data_filter: list[dict]) -> Result[Any]:
         """
          Получает список объектов из базы данных, используя оператор OR для фильтрации.
@@ -122,6 +139,5 @@ class BaseRepository:
     async def test_join(self):
         query = select(User, Role).join(Role, User.role_id == Role.id).filter(User.login == 'admin')
         x = await self._get_list_obj(query)
-        print(x)
         for i in x.iterator:
             print([type(j) for j in i])
