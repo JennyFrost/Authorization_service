@@ -6,14 +6,14 @@ from fastapi.exceptions import HTTPException
 from core.config import Token, Name
 
 
-class DoesNotExistException(Exception):
+class DoesNotExistException(HTTPException):
     def __init__(self, name: Name):
         self.name = name
         self.detail = f'No such {self.name}'
         self.status_code=HTTPStatus.BAD_REQUEST
 
 
-class AlreadyExistsException(Exception):
+class AlreadyExistsException(HTTPException):
     def __init__(self, name: Name):
         self.name = name
         self.detail = f'{self.name} already exists'
@@ -26,13 +26,13 @@ class InvalidPasswordException(HTTPException):
         self.status_code=HTTPStatus.BAD_REQUEST
 
 
-class UnsafeEntryException(Exception):
+class UnsafeEntryException(HTTPException):
     def __init__(self):
         self.detail = 'Suspicious entry attempt'
         self.status_code = HTTPStatus.BAD_REQUEST
 
 
-class InvalidTokenException(Exception):
+class InvalidTokenException(HTTPException):
     def __init__(self, token: Token):
         self.token = token
         if self.token == Token.BOTH:
@@ -43,7 +43,7 @@ class InvalidTokenException(Exception):
             self.status_code = HTTPStatus.UNPROCESSABLE_ENTITY
 
 
-class DefaultRoleDoesNotExistException(Exception):
+class DefaultRoleDoesNotExistException(HTTPException):
     def __init__(self):
         self.detail = 'No default role, can\'t create user'
         self.status_code = HTTPStatus.BAD_REQUEST
