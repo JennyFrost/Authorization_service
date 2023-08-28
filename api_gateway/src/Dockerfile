@@ -5,10 +5,10 @@ WORKDIR /usr/src/app
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
-COPY requirements.txt requirements.txt
-
 RUN apt-get update && \
-    apt-get clean
+    apt-get clean \
+
+COPY requirements.txt requirements.txt
 
 RUN  pip install --upgrade pip \
     && pip install -r requirements.txt

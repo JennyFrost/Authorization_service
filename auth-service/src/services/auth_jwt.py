@@ -13,7 +13,7 @@ class BaseAuthJWT:
             user_claims: dict,
             expires_time_access: int = app_settings.authjwt_time_access,
             expires_time_refresh: int = app_settings.authjwt_time_refresh
-    ) -> tuple[str]:
+    ) -> tuple[str, str]:
         access_token = await self.auth.create_access_token(
             subject=sub, expires_time=expires_time_access, user_claims=user_claims
         )

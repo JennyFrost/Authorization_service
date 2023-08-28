@@ -1,52 +1,43 @@
 from services.user import UserManage
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, Header, Query
 from typing import Annotated
 from depends import get_user_manage
 from schemas.entity import UserProfil, ChangeProfil, ChangePassword, HistoryUser, ChangeLevel
-from core.config import ErrorName
+from core.config import PAGE_SIZE
 
 
 router = APIRouter()
 
 
 @router.get('/self_data/')
-async def profil_user(
+async def user_profile(
         user_agent: Annotated[str | None, Header()] = None,
         user_manager: UserManage = Depends(get_user_manage)) -> UserProfil:
     '''
-    Метод возвращает информацию о пользователе.
-    '''
+    Метод возвращает информацию о пользователе (профиль).
 
-    user_profil: UserProfil = await user_manager.get_user_data(user_agent)
-    match user_profil:
-        case ErrorName.InvalidAccessToken:
-            raise HTTPException(status_code=422, detail='Signature has expired')
-        case ErrorName.UnsafeEntry:
-            raise HTTPException(status_code=400, detail='подозрение на небезопасный вход')
-    return user_profil
+    :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
+    :return: (UserProfil) Объект профиля. В противном случае выбрасывается исключение.
+    '''
+    user_profile: UserProfil = await user_manager.get_user_data(user_agent)
+    return user_profile
 
 
 @router.patch('/self_data/')
-async def profile_user(
+async def update_user_profile(
         self_data: ChangeProfil,
         user_agent: Annotated[str | None, Header()] = None,
         user_manager: UserManage = Depends(get_user_manage)) -> UserProfil:
     '''
     Метод для редактирования профиля пользователя.
-    '''
 
-    user_profil: UserProfil = await user_manager.change_profile_user(user_agent, self_data)
-    match user_profil:
-        case ErrorName.InvalidAccessToken:
-            raise HTTPException(status_code=422, detail='Signature has expired')
-        case ErrorName.UnsafeEntry:
-            raise HTTPException(status_code=400, detail='подозрение на небезопасный вход')
-        case ErrorName.LoginAlreadyExists:
-            raise HTTPException(status_code=400, detail='Пользователь с таким login уже существует')
-        case ErrorName.EmailAlreadyExists:
-            raise HTTPException(status_code=400, detail='Пользователь с таким email уже существует')
-    return user_profil
+    :param self_data: (ChangeProfil) Данные, необходимые для изменения профиля.
+    :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
+    :return: (UserProfil) Объект профиля. В противном случае выбрасывается исключение.
+    '''
+    user_profile: UserProfil = await user_manager.change_profile_user(user_agent, self_data)
+    return user_profile
 
 
 @router.post('/change_password/')
@@ -55,35 +46,33 @@ async def change_password(
         user_agent: Annotated[str | None, Header()] = None,
         user_manager: UserManage = Depends(get_user_manage)) -> str:
     '''
-    Метод для редактирования профиля пользователя.
-    '''
+    Метод для изменения пароля пользователя.
 
-    user_profil: UserProfil = await user_manager.change_password(user_agent, self_data)
-    match user_profil:
-        case ErrorName.InvalidAccessToken:
-            raise HTTPException(status_code=422, detail='Signature has expired')
-        case ErrorName.UnsafeEntry:
-            raise HTTPException(status_code=400, detail='подозрение на небезопасный вход')
-        case ErrorName.InvalidPassword:
-            raise HTTPException(status_code=400, detail='Неверный пароль')
+    :param self_data: (ChangePassword) Данные о старом и новом пароле.
+    :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
+    :return: (str) Строка "password changed". В противном случае выбрасывается исключение.
+    '''
+    await user_manager.change_password(user_agent, self_data)
     return "password changed"
 
 
-@router.get('/get_history/')
-async def get_history(
+@router.get('/user_history/')
+async def user_history(
+        page_number: Annotated[int, Query(description='Pagination page number', ge=1)] = 1,
+        page_size: Annotated[int, Query(description='Pagination page size', ge=1)] = PAGE_SIZE,
         user_agent: Annotated[str | None, Header()] = None,
-        user_manager: UserManage = Depends(get_user_manage)
+        user_manager: UserManage = Depends(get_user_manage),
 ) -> list[HistoryUser]:
     '''
-    Метод возвращает информацию о пользователе.
-    '''
+    Метод возвращает историю входов пользователя на сайт, обновлений токенов и выходов.
 
-    user_history: UserProfil = await user_manager.get_history(user_agent)
-    match user_history:
-        case ErrorName.InvalidAccessToken:
-            raise HTTPException(status_code=422, detail='Signature has expired')
-        case ErrorName.UnsafeEntry:
-            raise HTTPException(status_code=400, detail='подозрение на небезопасный вход')
+    :param page_number: (int) Номер страницы
+    :param page_size: (int) Количество записей на странице
+    :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
+    :return:
+    list[HistoryUser]: Список объектов модели HistoryUser. В противном случае выбрасывается исключение.
+    '''
+    user_history: list[HistoryUser] = await user_manager.get_history(user_agent, page_number, page_size)
     return user_history
 
 
@@ -93,14 +82,13 @@ async def change_level(
         user_agent: Annotated[str | None, Header()] = None,
         user_manager: UserManage = Depends(get_user_manage)) -> str | None:
     '''
-    Метод для редактирования профиля пользователя.
+    Метод для изменения роли пользователя (повышения или понижения на 1 уровень).
+
+    :param self_data: (ChangeLevel) Данные о том, повышать или понижать уровень роли
+    :param user_agent: (str) Заголовок User-Agent для идентификации клиентского приложения.
+    :return:
+    str: Строка "level raised" либо "level decreased".
+    В противном случае выбрасывается исключение.
     '''
-    status = await user_manager.change_level(user_agent, self_data.level_up)
-    match status:
-        case ErrorName.InvalidAccessToken:
-            raise HTTPException(status_code=422, detail='Signature has expired')
-        case ErrorName.UnsafeEntry:
-            raise HTTPException(status_code=400, detail='подозрение на небезопасный вход')
-        case ErrorName.RoleDoesNotExist:
-            raise HTTPException(status_code=400, detail='Роли не существует')
-    return "level raised" if self_data.level_up else "decreased"
+    await user_manager.change_level(user_agent, self_data.level_up)
+    return "level raised" if self_data.level_up else "level decreased"

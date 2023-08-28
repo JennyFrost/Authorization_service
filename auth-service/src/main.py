@@ -39,7 +39,7 @@ async def startup():
     # await create_database()
 
 app.include_router(auth.router, prefix='/api/v1/auth', tags=['login'])
-app.include_router(personal_acc.router, prefix='/api/v1/profil', tags=['personal_acc'])
+app.include_router(personal_acc.router, prefix='/api/v1/profile', tags=['personal_acc'])
 app.include_router(roles.router, prefix='/api/v1/admin', tags=['admin'])
 
 if __name__ == '__main__':
