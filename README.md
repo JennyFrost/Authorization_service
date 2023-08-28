@@ -1,5 +1,4 @@
 https://github.com/JennyFrost/Auth_sprint_1.git
-# рабочая ветка - dev
 
 # Проектная работа 6 спринта
 
