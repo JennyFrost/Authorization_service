@@ -1,7 +1,6 @@
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
-# import re
 
 
 class FieldFilter(BaseModel):

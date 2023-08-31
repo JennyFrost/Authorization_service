@@ -1,5 +1,3 @@
-from fastapi import Request, FastAPI
-from fastapi.responses import PlainTextResponse
 from http import HTTPStatus
 from fastapi.exceptions import HTTPException
 

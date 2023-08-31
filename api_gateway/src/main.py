@@ -3,7 +3,6 @@ from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
 
 from core.config import app_settings as settings
-
 from api.v1 import gateway
 
 
