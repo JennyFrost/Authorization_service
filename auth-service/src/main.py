@@ -7,7 +7,6 @@ from async_fastapi_jwt_auth.exceptions import AuthJWTException
 
 from core.config import app_settings
 from db import redis
-
 from api.v1 import auth, personal_acc, roles
 
 

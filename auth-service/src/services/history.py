@@ -1,7 +1,7 @@
 import uuid
 
 from schemas.entity import HistoryUser
-from models.entity import History, User
+from models.entity import History
 from services.repository import BaseRepository
 
 

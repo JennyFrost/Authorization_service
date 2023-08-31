@@ -1,4 +1,5 @@
 from async_fastapi_jwt_auth import AuthJWT
+
 from core.config import app_settings
 
 
